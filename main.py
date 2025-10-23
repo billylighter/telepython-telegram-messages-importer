@@ -5,9 +5,7 @@ import tkinter as tk
 from tkinter import messagebox, simpledialog
 from telethon import TelegramClient
 from telethon.errors import SessionPasswordNeededError
-from telethon.tl.types import InputPeerUser
 from PIL import Image, ImageTk, ImageDraw, ImageFont
-from io import BytesIO
 
 SESSIONS_DIR = "sessions"
 IMAGES_DIR = os.path.join("images", "profiles")
@@ -18,15 +16,18 @@ os.makedirs(IMAGES_DIR, exist_ok=True)
 
 AVATAR_SIZE = 50
 
+
 def load_meta():
     if os.path.exists(META_FILE):
         with open(META_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
     return {}
 
+
 def save_meta(meta):
     with open(META_FILE, "w", encoding="utf-8") as f:
         json.dump(meta, f, ensure_ascii=False, indent=2)
+
 
 class TelegramLoginApp:
     def __init__(self, root):
@@ -39,6 +40,7 @@ class TelegramLoginApp:
         self.phone = tk.StringVar()
         self.code = tk.StringVar()
 
+        self.phone_code_hash = None
         self.client = None
         self.loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self.loop)
@@ -67,7 +69,7 @@ class TelegramLoginApp:
         img.putalpha(mask)
         return img
 
-    def get_account_image(self, session_name, display_name, client=None):
+    def get_account_image(self, session_name, display_name):
         meta = load_meta()
         info = meta.get(session_name + ".session", {})
         avatar_path = info.get("avatar")
@@ -95,7 +97,7 @@ class TelegramLoginApp:
         if sessions:
             for s in sessions:
                 info = meta.get(s + ".session", {})
-                display_name = info.get("display_name", s)  # Use stored display_name or fallback to session name
+                display_name = info.get("display_name", s)
                 img = self.get_account_image(s, display_name)
 
                 frame = tk.Frame(self.root)
@@ -117,18 +119,15 @@ class TelegramLoginApp:
 
     def remove_account(self, session_name):
         if messagebox.askyesno("Confirm", f"Remove account '{session_name}'?"):
-            # Disconnect if current client
             if self.client:
                 client_path = self.client.session.filename
                 if client_path.endswith(session_name + ".session"):
                     self.disconnect_client()
 
-            # Delete session file
             session_path = os.path.join(SESSIONS_DIR, session_name + ".session")
             if os.path.exists(session_path):
                 os.remove(session_path)
 
-            # Delete avatar
             meta = load_meta()
             info = meta.get(session_name + ".session")
             if info:
@@ -205,9 +204,13 @@ class TelegramLoginApp:
         if not phone:
             messagebox.showerror("Error", "Please enter your phone number.")
             return
-        self.loop.run_until_complete(self.client.send_code_request(phone))
-        messagebox.showinfo("Code Sent", "Check your Telegram for the login code.")
-        self.create_code_form()
+        try:
+            result = self.loop.run_until_complete(self.client.send_code_request(phone))
+            self.phone_code_hash = result.phone_code_hash  # Store for later
+            messagebox.showinfo("Code Sent", "Check your Telegram for the login code.")
+            self.create_code_form()
+        except Exception as e:
+            messagebox.showerror("Send Code Error", str(e))
 
     def create_code_form(self):
         self.clear_window()
@@ -219,7 +222,9 @@ class TelegramLoginApp:
         phone = self.phone.get().strip()
         code = self.code.get().strip()
         try:
-            self.loop.run_until_complete(self.client.sign_in(phone, code))
+            self.loop.run_until_complete(
+                self.client.sign_in(phone=phone, code=code, phone_code_hash=self.phone_code_hash)
+            )
             self.rename_session_after_login()
             self.show_success()
         except SessionPasswordNeededError:
@@ -228,6 +233,8 @@ class TelegramLoginApp:
             self.rename_session_after_login()
             self.show_success()
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             messagebox.showerror("Login Error", str(e))
 
     # -------------------- Session Rename & Avatar Handling --------------------
@@ -242,11 +249,19 @@ class TelegramLoginApp:
             self.disconnect_client()
             os.rename(temp_path, new_path)
 
-        # Save API credentials and avatar to meta.json
-        self.check_and_update_avatar(safe_name)
+        # Save API credentials and avatar
+        meta = load_meta()
+        meta[safe_name + ".session"] = {
+            "api_id": int(self.api_id.get()),
+            "api_hash": self.api_hash.get(),
+            "display_name": me.first_name or safe_name
+        }
+        save_meta(meta)
+
         self.disconnect_client()
         self.client = TelegramClient(new_path, int(self.api_id.get()), self.api_hash.get())
         self.loop.run_until_complete(self.client.connect())
+        self.check_and_update_avatar(safe_name)
 
     def check_and_update_avatar(self, session_name):
         me = self.loop.run_until_complete(self.client.get_me())
@@ -260,7 +275,6 @@ class TelegramLoginApp:
                     photo_path = os.path.join(IMAGES_DIR, filename)
                     os.replace(file, photo_path)
             else:
-                # If no avatar, remove old one
                 meta = load_meta()
                 info = meta.get(safe_name + ".session")
                 if info:
@@ -270,7 +284,6 @@ class TelegramLoginApp:
         except:
             pass
 
-        # Update meta.json
         meta = load_meta()
         info = meta.get(safe_name + ".session", {})
         info["avatar"] = photo_path
@@ -290,11 +303,11 @@ class TelegramLoginApp:
         me = self.loop.run_until_complete(self.client.get_me())
         messagebox.showinfo("Login Success", f"Logged in as {me.first_name}")
 
-        # Load avatar
         meta = load_meta()
         session_name = me.username or me.first_name or str(me.phone)
         safe_name = session_name.replace(" ", "_").replace("@", "")
         avatar_path = meta.get(safe_name + ".session", {}).get("avatar")
+
         if avatar_path and os.path.exists(avatar_path):
             img = Image.open(avatar_path)
             img = self.make_rounded_avatar(img)
@@ -303,7 +316,6 @@ class TelegramLoginApp:
             lbl_img.image = photo
             lbl_img.pack(pady=10)
         else:
-            # fallback to first letter avatar
             letter = me.first_name[0].upper() if me.first_name else "?"
             img = Image.new("RGBA", (AVATAR_SIZE, AVATAR_SIZE), color=(100, 100, 200))
             draw = ImageDraw.Draw(img)
@@ -316,7 +328,6 @@ class TelegramLoginApp:
             lbl_img.image = photo
             lbl_img.pack(pady=10)
 
-        # Display user info
         tk.Label(self.root, text=f"Logged in as {me.first_name}", font=("Arial", 12, "bold")).pack(pady=5)
         if me.username:
             tk.Label(self.root, text=f"@{me.username}").pack(pady=5)
