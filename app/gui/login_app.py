@@ -1,5 +1,8 @@
+import asyncio
 import os
+import threading
 import tkinter as tk
+from asyncio import CancelledError
 from tkinter import messagebox, simpledialog
 from PIL import Image, ImageTk, ImageDraw, ImageFont
 from telethon.errors import SessionPasswordNeededError
@@ -17,17 +20,19 @@ class TelegramLoginApp:
         self.root.title("Telegram Login")
         self.root.geometry("400x500")
 
-        self.api_id = tk.StringVar()
-        self.api_hash = tk.StringVar()
-        self.phone = tk.StringVar()
-        self.code = tk.StringVar()
+        # создаём ОДИН event loop
+        self.loop = asyncio.new_event_loop()
+        threading.Thread(target=self._start_loop, daemon=True).start()
 
-        self.phone_code_hash = None
-        self.client_manager = TelegramClientManager()
+        # передаём loop менеджеру
+        self.client_manager = TelegramClientManager(loop=self.loop)
         self.client = None
 
-        self.temp_session_path = os.path.join(SESSIONS_DIR, "temp")
         self.show_session_selector()
+
+    def _start_loop(self):
+        asyncio.set_event_loop(self.loop)
+        self.loop.run_forever()
 
     # -------------------- Helpers --------------------
     def clear_window(self):
@@ -267,7 +272,6 @@ class TelegramLoginApp:
     def show_success(self):
         self.clear_window()
         me = self.client_manager.get_me()
-        # messagebox.showinfo("Login Success", f"Logged in as {me.first_name}")
 
         meta = load_meta()
         session_name = me.username or me.first_name or str(me.phone)
@@ -292,3 +296,13 @@ class TelegramLoginApp:
 
         tk.Button(self.root, text="Send Test Message", command=self.send_test_message).pack(pady=15)
         tk.Button(self.root, text="Back to Account List", command=self.show_session_selector).pack(pady=5)
+
+        future = asyncio.run_coroutine_threadsafe(
+            self.client_manager.get_dialogs(10),
+            self.loop
+        )
+        dialogs = future.result()  # ⚠️ блокирует поток, пока не выполнится
+
+        tk.Label(self.root, text=f"Logged in as {me.first_name}").pack(pady=10)
+        for d in dialogs:
+            tk.Label(self.root, text=d.name).pack()
