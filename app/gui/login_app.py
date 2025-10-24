@@ -113,6 +113,7 @@ class TelegramLoginApp:
     # -------------------- API Login --------------------
     def create_api_form(self):
         self.clear_window()
+
         tk.Label(self.root, text="Enter Telegram API Credentials", font=("Arial", 12, "bold")).pack(pady=10)
 
         tk.Label(self.root, text="API ID:").pack(pady=5)
@@ -121,7 +122,13 @@ class TelegramLoginApp:
         tk.Label(self.root, text="API Hash:").pack(pady=5)
         tk.Entry(self.root, textvariable=self.api_hash).pack(pady=5)
 
-        tk.Button(self.root, text="Next", command=self.start_login).pack(pady=15)
+        # Frame для кнопок
+        button_frame = tk.Frame(self.root)
+        button_frame.pack(pady=15)  # отступ сверху/снизу всего блока кнопок
+
+        tk.Button(button_frame, text="Back to Account List", command=self.show_session_selector).pack(side=tk.LEFT, padx=5)
+        tk.Button(button_frame, text="Next", command=self.start_login).pack(side=tk.LEFT, padx=5)
+
 
     def start_login(self):
         try:
@@ -143,9 +150,18 @@ class TelegramLoginApp:
     # -------------------- Phone Verification --------------------
     def create_phone_form(self):
         self.clear_window()
+
         tk.Label(self.root, text="Phone number (+country code):").pack(pady=5)
         tk.Entry(self.root, textvariable=self.phone).pack(pady=5)
-        tk.Button(self.root, text="Send Code", command=self.send_code).pack(pady=15)
+
+        # Frame для кнопок
+        button_frame = tk.Frame(self.root)
+        button_frame.pack(pady=15)
+
+        # Кнопка Back слева
+        tk.Button(button_frame, text="Back", command=self.create_api_form).pack(side=tk.LEFT, padx=5)
+        # Кнопка Send Code справа
+        tk.Button(button_frame, text="Send Code", command=self.send_code).pack(side=tk.LEFT, padx=5)
 
     def send_code(self):
         phone = self.phone.get().strip()
@@ -162,9 +178,18 @@ class TelegramLoginApp:
 
     def create_code_form(self):
         self.clear_window()
+
         tk.Label(self.root, text="Enter the code you received in Telegram:").pack(pady=5)
         tk.Entry(self.root, textvariable=self.code).pack(pady=5)
-        tk.Button(self.root, text="Verify Code", command=self.verify_code).pack(pady=15)
+
+        # Frame для кнопок
+        button_frame = tk.Frame(self.root)
+        button_frame.pack(pady=15)
+
+        # Кнопка Back слева
+        tk.Button(button_frame, text="Back", command=self.create_phone_form).pack(side=tk.LEFT, padx=5)
+        # Кнопка Verify Code справа
+        tk.Button(button_frame, text="Verify Code", command=self.verify_code).pack(side=tk.LEFT, padx=5)
 
     def verify_code(self):
         phone = self.phone.get().strip()
@@ -242,7 +267,7 @@ class TelegramLoginApp:
     def show_success(self):
         self.clear_window()
         me = self.client_manager.get_me()
-        messagebox.showinfo("Login Success", f"Logged in as {me.first_name}")
+        # messagebox.showinfo("Login Success", f"Logged in as {me.first_name}")
 
         meta = load_meta()
         session_name = me.username or me.first_name or str(me.phone)
