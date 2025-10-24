@@ -19,6 +19,7 @@ class TelegramLoginApp:
         self.root = root
         self.root.title("Telegram Login")
         self.root.geometry("400x500")
+        self.root.resizable(False, False)
 
         # создаём ОДИН event loop
         self.loop = asyncio.new_event_loop()
@@ -58,6 +59,7 @@ class TelegramLoginApp:
     # -------------------- Session Selector --------------------
     def show_session_selector(self):
         self.clear_window()
+        self.root.geometry("400x500")
         tk.Label(self.root, text="Choose Telegram Account", font=("Arial", 12, "bold")).pack(pady=10)
 
         meta = load_meta()
@@ -268,8 +270,10 @@ class TelegramLoginApp:
             self.client_manager.send_message("me", "Hello from Tkinter GUI!")
             messagebox.showinfo("Message Sent", "Message sent to Saved Messages.")
 
-    # -------------------- Logged In --------------------
     def show_success(self):
+        # Увеличиваем окно
+        self.root.geometry("800x500")
+
         self.clear_window()
         me = self.client_manager.get_me()
 
@@ -278,6 +282,15 @@ class TelegramLoginApp:
         safe_name = session_name.replace(" ", "_").replace("@", "")
         avatar_path = meta.get(safe_name + ".session", {}).get("avatar")
 
+        # -------------------- Главный контейнер --------------------
+        main_frame = tk.Frame(self.root)
+        main_frame.pack(fill="both", expand=True)
+
+        # -------------------- Левая панель (сайдбар) --------------------
+        sidebar = tk.Frame(main_frame, width=250, bg="#f0f0f0", relief="ridge", bd=2)
+        sidebar.pack(side="left", fill="y")
+
+        # Загружаем или генерируем аватар
         if avatar_path and os.path.exists(avatar_path):
             img = Image.open(avatar_path)
             photo = ImageTk.PhotoImage(make_rounded_avatar(img))
@@ -285,24 +298,71 @@ class TelegramLoginApp:
             img = generate_letter_avatar(me.first_name or "?")
             photo = ImageTk.PhotoImage(img)
 
-        lbl_img = tk.Label(self.root, image=photo)
+        lbl_img = tk.Label(sidebar, image=photo, bg="#f0f0f0")
         lbl_img.image = photo
         lbl_img.pack(pady=10)
 
-        tk.Label(self.root, text=f"Logged in as {me.first_name}", font=("Arial", 12, "bold")).pack(pady=5)
+        tk.Label(sidebar, text=f"{me.first_name}", font=("Arial", 12, "bold"), bg="#f0f0f0").pack(pady=2)
         if me.username:
-            tk.Label(self.root, text=f"@{me.username}").pack(pady=5)
-        tk.Label(self.root, text=f"Phone: {me.phone}").pack(pady=5)
+            tk.Label(sidebar, text=f"@{me.username}", bg="#f0f0f0").pack(pady=2)
+        tk.Label(sidebar, text=f"📱 {me.phone}", bg="#f0f0f0").pack(pady=2)
 
-        tk.Button(self.root, text="Send Test Message", command=self.send_test_message).pack(pady=15)
-        tk.Button(self.root, text="Back to Account List", command=self.show_session_selector).pack(pady=5)
+        tk.Button(sidebar, text="📤 Send Test Message", command=self.send_test_message).pack(pady=15, fill="x", padx=10)
+        tk.Button(sidebar, text="⬅️ Back to Accounts", command=self.show_session_selector).pack(pady=5, fill="x",
+                                                                                                padx=10)
 
+        # -------------------- Правая панель (список диалогов) --------------------
+
+
+        # Получаем диалоги (блокирующе, но безопасно)
         future = asyncio.run_coroutine_threadsafe(
-            self.client_manager.get_dialogs(10),
+            self.client_manager.get_dialogs(None),
             self.loop
         )
-        dialogs = future.result()  # ⚠️ блокирует поток, пока не выполнится
+        dialogs = future.result()
 
-        tk.Label(self.root, text=f"Logged in as {me.first_name}").pack(pady=10)
+        dialogs_frame = tk.Frame(main_frame, bg="white")
+        dialogs_frame.pack(side="right", fill="both", expand=True)
+
+        tk.Label(dialogs_frame, text="Dialogs", font=("Arial", 13, "bold"), bg="white").pack(anchor="w", padx=10,
+                                                                                             pady=5)
+
+        # Canvas + Scrollbar
+        canvas = tk.Canvas(dialogs_frame, bg="white", highlightthickness=0)
+        scrollbar = tk.Scrollbar(dialogs_frame, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=scrollbar.set)
+
+        scrollable_frame = tk.Frame(canvas, bg="white")
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+
+        # Обновление области прокрутки при добавлении элементов
+        def on_configure(event):
+            canvas.configure(scrollregion=canvas.bbox("all"))
+
+        scrollable_frame.bind("<Configure>", on_configure)
+
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+        def _on_mousewheel(event):
+            canvas_height = canvas.winfo_height()
+            content_height = scrollable_frame.winfo_height()
+
+            if content_height > canvas_height:
+                canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+        # Привязываем колесо мыши
+        canvas.bind_all("<MouseWheel>", _on_mousewheel)
+
+        # Выводим диалоги
         for d in dialogs:
-            tk.Label(self.root, text=d.name).pack()
+            tk.Label(
+                scrollable_frame,
+                text=f"💬 {d.name}",
+                bg="white",
+                anchor="w",
+                font=("Arial", 11)
+            ).pack(fill="x", padx=10, pady=3)
+
+
+
