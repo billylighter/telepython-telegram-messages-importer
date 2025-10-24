@@ -10,9 +10,9 @@ def make_rounded_avatar(img: Image.Image) -> Image.Image:
     img.putalpha(mask)
     return img
 
-def generate_letter_avatar(letter: str) -> Image.Image:
+def generate_letter_avatar(letter: str, bg_color=(100, 100, 200)) -> Image.Image:
     letter = letter[0].upper() if letter else "?"
-    img = Image.new("RGBA", (AVATAR_SIZE, AVATAR_SIZE), color=(100, 100, 200))
+    img = Image.new("RGBA", (AVATAR_SIZE, AVATAR_SIZE), color=bg_color)
     draw = ImageDraw.Draw(img)
     font = ImageFont.load_default()
     w, h = draw.textbbox((0, 0), letter, font=font)[2:]
