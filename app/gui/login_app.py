@@ -24,13 +24,22 @@ class TelegramLoginApp:
         self.root.geometry("400x500")
         self.root.resizable(False, False)
 
-        # создаём ОДИН event loop
         self.loop = asyncio.new_event_loop()
         threading.Thread(target=self._start_loop, daemon=True).start()
 
-        # передаём loop менеджеру
         self.client_manager = TelegramClientManager(loop=self.loop)
         self.client = None
+
+        # Text variables for input fields
+        self.api_id = tk.StringVar()
+        self.api_hash = tk.StringVar()
+        self.phone = tk.StringVar()
+        self.code = tk.StringVar()
+        self.phone_code_hash = None
+        self.temp_session_path = "temp"
+        self.selected_dialog = None
+        self.selected_dialog_id = None
+        self.dialog_labels = []
 
         self.show_session_selector()
 
@@ -132,9 +141,8 @@ class TelegramLoginApp:
         tk.Label(self.root, text="API Hash:").pack(pady=5)
         tk.Entry(self.root, textvariable=self.api_hash).pack(pady=5)
 
-        # Frame для кнопок
         button_frame = tk.Frame(self.root)
-        button_frame.pack(pady=15)  # отступ сверху/снизу всего блока кнопок
+        button_frame.pack(pady=15)
 
         tk.Button(button_frame, text="Back to Account List", command=self.show_session_selector).pack(side=tk.LEFT, padx=5)
         tk.Button(button_frame, text="Next", command=self.start_login).pack(side=tk.LEFT, padx=5)
@@ -148,7 +156,7 @@ class TelegramLoginApp:
             messagebox.showerror("Error", "API ID must be a number.")
             return
 
-        self.client = self.client_manager.connect("temp", api_id, api_hash)
+        self.client = self.client_manager.connect(self.temp_session_path, api_id, api_hash)
 
         if not self.client_manager.is_authorized():
             messagebox.showinfo("Success", "API credentials accepted!")
@@ -164,13 +172,10 @@ class TelegramLoginApp:
         tk.Label(self.root, text="Phone number (+country code):").pack(pady=5)
         tk.Entry(self.root, textvariable=self.phone).pack(pady=5)
 
-        # Frame для кнопок
         button_frame = tk.Frame(self.root)
         button_frame.pack(pady=15)
 
-        # Кнопка Back слева
         tk.Button(button_frame, text="Back", command=self.create_api_form).pack(side=tk.LEFT, padx=5)
-        # Кнопка Send Code справа
         tk.Button(button_frame, text="Send Code", command=self.send_code).pack(side=tk.LEFT, padx=5)
 
     def send_code(self):
@@ -192,13 +197,10 @@ class TelegramLoginApp:
         tk.Label(self.root, text="Enter the code you received in Telegram:").pack(pady=5)
         tk.Entry(self.root, textvariable=self.code).pack(pady=5)
 
-        # Frame для кнопок
         button_frame = tk.Frame(self.root)
         button_frame.pack(pady=15)
 
-        # Кнопка Back слева
         tk.Button(button_frame, text="Back", command=self.create_phone_form).pack(side=tk.LEFT, padx=5)
-        # Кнопка Verify Code справа
         tk.Button(button_frame, text="Verify Code", command=self.verify_code).pack(side=tk.LEFT, padx=5)
 
     def verify_code(self):
@@ -230,7 +232,6 @@ class TelegramLoginApp:
             self.disconnect_client()
             os.rename(temp_path, new_path)
 
-        # Save API credentials and avatar
         meta = load_meta()
         meta[safe_name + ".session"] = {
             "api_id": int(self.api_id.get()),
@@ -277,7 +278,6 @@ class TelegramLoginApp:
         import os
         from PIL import Image, ImageTk, ImageDraw, ImageFont
 
-        # -------------------- Плейсхолдер для отсутствующих аватаров --------------------
         def generate_placeholder_avatar(letter):
             img = Image.new("RGB", (40, 40), color="#cccccc")
             draw = ImageDraw.Draw(img)
@@ -286,17 +286,13 @@ class TelegramLoginApp:
             except:
                 font = ImageFont.load_default()
 
-            # Новый способ вычислить размеры текста
             bbox = draw.textbbox((0, 0), letter, font=font)
             w = bbox[2] - bbox[0]
             h = bbox[3] - bbox[1]
 
-            # Центрируем текст
             draw.text(((40 - w) / 2, (40 - h) / 2), letter, fill="white", font=font)
             return img
 
-        # -------------------- Основной код --------------------
-        # Увеличиваем окно
         self.root.geometry("800x500")
 
         self.clear_window()
@@ -307,15 +303,12 @@ class TelegramLoginApp:
         safe_name = session_name.replace(" ", "_").replace("@", "")
         avatar_path = meta.get(safe_name + ".session", {}).get("avatar")
 
-        # -------------------- Главный контейнер --------------------
         main_frame = tk.Frame(self.root)
         main_frame.pack(fill="both", expand=True)
 
-        # -------------------- Левая панель (сайдбар) --------------------
         sidebar = tk.Frame(main_frame, width=250, bg="#f0f0f0", relief="ridge", bd=2)
         sidebar.pack(side="left", fill="y")
 
-        # Загружаем или генерируем аватар
         if avatar_path and os.path.exists(avatar_path):
             img = Image.open(avatar_path)
             photo = ImageTk.PhotoImage(make_rounded_avatar(img))
@@ -336,10 +329,8 @@ class TelegramLoginApp:
         tk.Button(sidebar, text="⬅️ Back to Accounts", command=self.show_session_selector).pack(pady=5, fill="x",
                                                                                                 padx=10)
 
-        # -------------------- Правая панель (список диалогов) --------------------
         import asyncio
 
-        # Получаем диалоги (блокирующе, но безопасно)
         future = asyncio.run_coroutine_threadsafe(
             self.client_manager.get_dialogs(None),
             self.loop
@@ -352,7 +343,6 @@ class TelegramLoginApp:
         tk.Label(dialogs_frame, text="Dialogs", font=("Arial", 13, "bold"), bg="white").pack(anchor="w", padx=10,
                                                                                              pady=5)
 
-        # Canvas + Scrollbar
         canvas = tk.Canvas(dialogs_frame, bg="white", highlightthickness=0)
         scrollbar = tk.Scrollbar(dialogs_frame, orient="vertical", command=canvas.yview)
         canvas.configure(yscrollcommand=scrollbar.set)
@@ -360,7 +350,6 @@ class TelegramLoginApp:
         scrollable_frame = tk.Frame(canvas, bg="white")
         canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
 
-        # Обновление области прокрутки при добавлении элементов
         def on_configure(event):
             canvas.configure(scrollregion=canvas.bbox("all"))
 
@@ -376,41 +365,38 @@ class TelegramLoginApp:
             if content_height > canvas_height:
                 canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
 
-        # Привязываем колесо мыши
         canvas.bind_all("<MouseWheel>", _on_mousewheel)
-        self.selected_dialog_id = None  # ID выбранного диалога
-        self.dialog_labels = []  # Список Label для управления цветом
+        self.selected_dialog_id = None
+        self.dialog_labels = []
         DIALOG_BG = "white"
-        DIALOG_BG_SELECTED = "#cce5ff"  # цвет выбранного диалога
+        DIALOG_BG_SELECTED = "#cce5ff"
 
-        def select_dialog(dialog_id, label):
-            # Сбрасываем фон всех
+        def select_dialog(dialog_id, frame):
             for lbl in self.dialog_labels:
                 lbl.config(bg=DIALOG_BG)
-            # Выделяем выбранный
-            label.config(bg=DIALOG_BG_SELECTED)
-            self.selected_dialog_id = dialog_id
-            print("Выбран диалог ID:", dialog_id)
+            frame.config(bg=DIALOG_BG_SELECTED)
 
-        # Выводим диалоги
+            self.selected_dialog_id = dialog_id
+            self.selected_dialog = next((d for d in dialogs if d.id == dialog_id), None)
+            print("Selected dialog ID:", dialog_id)
+
+            self.export_controls.pack(fill="x", padx=10, pady=(0, 10))
+
+
         for d in dialogs:
             print(d)
 
-            # Генерируем плейсхолдер-аватар с первой буквой названия
             first_letter = (d.name[0].upper() if d.name else "?")
             avatar_img = generate_placeholder_avatar(first_letter)
             avatar_photo = ImageTk.PhotoImage(avatar_img)
 
-            # Контейнер для одной строки диалога
             dialog_frame = tk.Frame(scrollable_frame, bg=DIALOG_BG, padx=5, pady=3)
             dialog_frame.pack(fill="x", padx=10, pady=2)
 
-            # Аватар
             avatar_label = tk.Label(dialog_frame, image=avatar_photo, bg=DIALOG_BG)
-            avatar_label.image = avatar_photo  # нужно, чтобы не сборщик мусора не удалил
+            avatar_label.image = avatar_photo
             avatar_label.pack(side="left", padx=(0, 8))
 
-            # Название диалога
             lbl = tk.Label(
                 dialog_frame,
                 text=f"{d.name}",
@@ -421,7 +407,6 @@ class TelegramLoginApp:
             )
             lbl.pack(side="left", fill="x", expand=True)
 
-            # Клик по строке диалога
             def on_click(event, dialog_id=d.id, l=dialog_frame):
                 select_dialog(dialog_id, l)
 
@@ -431,74 +416,57 @@ class TelegramLoginApp:
 
             self.dialog_labels.append(dialog_frame)
 
-            # -------------------- Панель для экспорта (изначально скрыта) --------------------
-            # -------------------- Панель для экспорта (одна, общая, изначально скрыта) --------------------
-            self.export_controls = tk.Frame(dialogs_frame, bg="#eef5ff", relief="ridge", bd=2)
-            self.export_controls.pack(fill="x", padx=10, pady=(0, 10))
-            self.export_controls.pack_forget()  # скрываем до выбора диалога
+        self.export_controls = tk.Frame(dialogs_frame, bg="#eef5ff", relief="ridge", bd=2)
+        self.export_controls.pack(fill="x", padx=10, pady=(0, 10))
+        self.export_controls.pack_forget()
 
-            export_label = tk.Label(self.export_controls, text="📜", bg="#eef5ff")
-            export_label.pack(side="left", padx=5)
+        export_label = tk.Label(self.export_controls, text="📜", bg="#eef5ff")
+        export_label.pack(side="left", padx=5)
 
-            count_entry = tk.Entry(self.export_controls, width=6)
-            count_entry.insert(0, "50")
-            count_entry.pack(side="left", padx=5)
+        count_entry = tk.Entry(self.export_controls, width=6)
+        count_entry.insert(0, "50")
+        count_entry.pack(side="left", padx=5)
 
-            export_word_btn = tk.Button(
-                self.export_controls,
-                text="📄 Export to Word",
-                command=lambda: self.export_chat_to_docx(
-                    self.selected_dialog,
-                    asyncio.run_coroutine_threadsafe(
-                        self.client_manager.client.get_messages(
-                            self.selected_dialog,
-                            limit=int(count_entry.get())
-                        ),
-                        self.loop
-                    ).result()
-                )
+        export_word_btn = tk.Button(
+            self.export_controls,
+            text="📄 Export to Word",
+            command=lambda: self.export_chat_to_docx(
+                self.selected_dialog,
+                asyncio.run_coroutine_threadsafe(
+                    self.client_manager.client.get_messages(
+                        self.selected_dialog,
+                        limit=int(count_entry.get())
+                    ),
+                    self.loop
+                ).result()
             )
-            export_word_btn.pack(side="left", padx=10)
+        )
+        export_word_btn.pack(side="left", padx=10)
 
-            # -------------------- Функции --------------------
-
-            def select_dialog(dialog_id, frame):
-                # Сброс выделений
-                for lbl in self.dialog_labels:
-                    lbl.config(bg=DIALOG_BG)
-                frame.config(bg=DIALOG_BG_SELECTED)
-
-                self.selected_dialog_id = dialog_id
-                self.selected_dialog = next((d for d in dialogs if d.id == dialog_id), None)
-                print("Выбран диалог ID:", dialog_id)
-
-                # Показываем панель экспорта
-                self.export_controls.pack(fill="x", padx=10, pady=(0, 10))
-
-            from docx import Document
-            from docx.shared import Pt, RGBColor
-            from docx.enum.text import WD_ALIGN_PARAGRAPH
-            import os
-            import asyncio
+        from docx import Document
+        from docx.shared import Pt, RGBColor
+        from docx.enum.text import WD_ALIGN_PARAGRAPH
+        import os
+        import asyncio
 
     def export_chat_to_docx(self, dialog, messages):
         from docx import Document
         from docx.shared import Pt, Inches, RGBColor
         from docx.enum.text import WD_ALIGN_PARAGRAPH
         import asyncio, os
+        from PIL import Image
+        from pyrogram.enums import MessageMediaType
 
         doc = Document()
-        # doc.add_heading(f"💬 Chat with {dialog.name}", level=1)
 
-        # Получаем текущего пользователя
         me = asyncio.run_coroutine_threadsafe(
             self.client_manager.client.get_me(), self.loop
         ).result()
 
-        temp_dir = "exports/temp"
+        temp_dir = "temp_dialog_photos"
         os.makedirs(temp_dir, exist_ok=True)
 
-        last_sender_id = None  # чтобы не повторять фото
+        last_sender_id = None
 
         for msg in reversed(messages):
             sender = getattr(msg.sender, "first_name", "Unknown")
@@ -506,7 +474,6 @@ class TelegramLoginApp:
             time_str = msg.date.strftime("%Y-%m-%d %H:%M")
             is_me = (msg.sender_id == me.id)
 
-            # === Если новый отправитель — добавляем аватар ===
             if msg.sender_id != last_sender_id:
                 avatar_path = None
                 if msg.sender and msg.sender.photo:
@@ -520,9 +487,8 @@ class TelegramLoginApp:
                                 self.loop,
                             ).result()
                     except Exception as e:
-                        print(f"⚠️ Не удалось загрузить фото {sender}: {e}")
+                        print(f"⚠️ Could not download photo for {sender}: {e}")
 
-                # Добавляем аватар
                 if avatar_path and os.path.exists(avatar_path):
                     p_avatar = doc.add_paragraph()
                     run = p_avatar.add_run()
@@ -531,68 +497,109 @@ class TelegramLoginApp:
 
                 last_sender_id = msg.sender_id
 
-            # === Основной блок сообщения ===
             p = doc.add_paragraph()
 
-            # Имя
             sender_run = p.add_run(sender + "\n")
             sender_run.bold = True
-            sender_run.font.name = "Segoe UI Emoji"  # Поддержка эмоджи
+            sender_run.font.name = "Segoe UI Emoji"
             sender_run.font.size = Pt(11)
             sender_run.font.color.rgb = RGBColor(0, 102, 204) if is_me else RGBColor(0, 0, 0)
 
-            # Время
             time_run = p.add_run(time_str + "\n")
             time_run.italic = True
-            time_run.font.name = "Segoe UI Emoji"  # Поддержка эмоджи
+            time_run.font.name = "Segoe UI Emoji"
             time_run.font.size = Pt(8)
             time_run.font.color.rgb = RGBColor(128, 128, 128)
 
-            # Текст (если есть)
             if text.strip():
                 text_run = p.add_run(text)
-                text_run.font.name = "Segoe UI Emoji"  # Поддержка эмоджи
+                text_run.font.name = "Segoe UI Emoji"
                 text_run.font.size = Pt(11)
                 text_run.font.color.rgb = RGBColor(0, 0, 0)
 
             p.alignment = WD_ALIGN_PARAGRAPH.RIGHT if is_me else WD_ALIGN_PARAGRAPH.LEFT
 
-            # === Если сообщение содержит фото ===
+            media_path_to_insert = None
+            media_type_text = None
+
             if getattr(msg, "photo", None) or getattr(msg, "media", None):
                 try:
-                    photo_path = os.path.join(temp_dir, f"photo_{msg.id}.jpg")
-                    asyncio.run_coroutine_threadsafe(
+                    temp_file_base = os.path.join(temp_dir, f"media_{msg.id}")
+
+                    downloaded_path = asyncio.run_coroutine_threadsafe(
                         self.client_manager.client.download_media(
-                            msg, file=photo_path
+                            msg, file=temp_file_base
                         ),
                         self.loop,
                     ).result()
 
-                    if os.path.exists(photo_path):
-                        img_paragraph = doc.add_paragraph()
-                        img_run = img_paragraph.add_run()
-                        img_run.add_picture(photo_path, width=Inches(2.5))
-                        img_paragraph.alignment = WD_ALIGN_PARAGRAPH.RIGHT if is_me else WD_ALIGN_PARAGRAPH.LEFT
+                    if downloaded_path and os.path.exists(downloaded_path):
+                        ext = os.path.splitext(downloaded_path)[1].lower()
+
+                        if ext in ['.jpg', '.jpeg', '.png', '.gif', '.bmp']:
+                            media_path_to_insert = downloaded_path
+
+                        elif ext == '.webp':
+                            png_path = os.path.join(temp_dir, f"media_{msg.id}.png")
+                            try:
+                                img = Image.open(downloaded_path).convert("RGBA")
+                                img.save(png_path, "PNG")
+                                media_path_to_insert = png_path
+                                os.remove(downloaded_path)
+                            except Exception as e:
+                                print(f"⚠️ WEBP conversion error {downloaded_path}: {e}")
+                                media_type_text = f"🖼️ [File]"
+
+                        elif ext in ['.webm', '.mp4', '.mov']:
+                            media_type_text = f"🎬 [Video]"
+                            os.remove(downloaded_path)
+
+                        elif ext in ['.oga', '.mp3', '.flac']:
+                            media_type_text = f"🎤 [Voice Message/Audio]"
+                            os.remove(downloaded_path)
+
+                        else:
+                            media_type_text = f"📎 [File: {os.path.basename(downloaded_path)}]"
+                            if os.path.exists(downloaded_path):
+                                os.remove(downloaded_path)
 
                 except Exception as e:
-                    print(f"⚠️ Не удалось скачать фото из сообщения {msg.id}: {e}")
+                    print(f"⚠️ Could not download or process media {msg.id}: {e}")
+                    media_type_text = "❌ [Media Download Error]"
 
-        # === Сохраняем результат ===
+            if media_path_to_insert and os.path.exists(media_path_to_insert):
+                try:
+                    img_paragraph = doc.add_paragraph()
+                    img_run = img_paragraph.add_run()
+
+                    is_sticker = getattr(msg, "media", None) == MessageMediaType.STICKER
+                    width = Inches(1.5) if is_sticker else Inches(2.5)
+
+                    img_run.add_picture(media_path_to_insert, width=width)
+                    img_paragraph.alignment = WD_ALIGN_PARAGRAPH.RIGHT if is_me else WD_ALIGN_PARAGRAPH.LEFT
+
+                except Exception as e:
+                    print(f"⚠️ Error inserting image {media_path_to_insert} into DOCX: {e}")
+
+                finally:
+                    os.remove(media_path_to_insert)
+
+            elif media_type_text:
+                media_p = doc.add_paragraph()
+                media_run = media_p.add_run(media_type_text)
+                media_run.font.italic = True
+                media_run.font.size = Pt(10)
+                media_run.font.color.rgb = RGBColor(160, 160, 160)
+                media_p.alignment = WD_ALIGN_PARAGRAPH.RIGHT if is_me else WD_ALIGN_PARAGRAPH.LEFT
+
         os.makedirs("exports/docx", exist_ok=True)
         file_path = f"exports/docx/chat_{dialog.id}.docx"
         doc.save(file_path)
-        print(f"✅ Экспортировано в Word: {file_path}")
+        print(f"✅ Exported to Word: {file_path}")
 
-        # Чистим временные файлы
         try:
             for f in os.listdir(temp_dir):
                 os.remove(os.path.join(temp_dir, f))
-        except Exception:
+            os.rmdir(temp_dir)
+        except Exception as e:
             pass
-
-
-
-
-
-
-
