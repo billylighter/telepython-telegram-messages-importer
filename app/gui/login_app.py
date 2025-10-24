@@ -537,18 +537,21 @@ class TelegramLoginApp:
             # Имя
             sender_run = p.add_run(sender + "\n")
             sender_run.bold = True
+            sender_run.font.name = "Segoe UI Emoji"  # Поддержка эмоджи
             sender_run.font.size = Pt(11)
             sender_run.font.color.rgb = RGBColor(0, 102, 204) if is_me else RGBColor(0, 0, 0)
 
             # Время
             time_run = p.add_run(time_str + "\n")
             time_run.italic = True
+            time_run.font.name = "Segoe UI Emoji"  # Поддержка эмоджи
             time_run.font.size = Pt(8)
             time_run.font.color.rgb = RGBColor(128, 128, 128)
 
             # Текст (если есть)
             if text.strip():
                 text_run = p.add_run(text)
+                text_run.font.name = "Segoe UI Emoji"  # Поддержка эмоджи
                 text_run.font.size = Pt(11)
                 text_run.font.color.rgb = RGBColor(0, 0, 0)
 
