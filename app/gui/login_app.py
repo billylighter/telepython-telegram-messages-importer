@@ -9,6 +9,7 @@ from telethon.errors import SessionPasswordNeededError
 
 from docx import Document
 from docx.shared import Pt, RGBColor
+from telethon.tl.types import MessageService
 
 from app.utils.constants import AVATAR_SIZE, SESSIONS_DIR, IMAGES_DIR
 from app.utils.file_utils import load_meta, save_meta
@@ -442,22 +443,24 @@ class TelegramLoginApp:
             )
         )
         export_word_btn.pack(side="left", padx=10)
-
-        from docx import Document
-        from docx.shared import Pt, RGBColor
-        from docx.enum.text import WD_ALIGN_PARAGRAPH
-        import os
         import asyncio
 
     def export_chat_to_docx(self, dialog, messages):
         from docx import Document
-        from docx.shared import Pt, Inches, RGBColor
+        from docx.shared import Pt, Inches, RGBColor, Cm
         from docx.enum.text import WD_ALIGN_PARAGRAPH
         import asyncio, os
         from PIL import Image
         from pyrogram.enums import MessageMediaType
 
         doc = Document()
+
+        # Убираем стандартные поля
+        for section in doc.sections:
+            section.top_margin = Cm(.25)
+            section.bottom_margin = Cm(.25)
+            section.left_margin = Cm(.25)
+            section.right_margin = Cm(.25)
 
         me = asyncio.run_coroutine_threadsafe(
             self.client_manager.client.get_me(), self.loop
@@ -474,6 +477,7 @@ class TelegramLoginApp:
             time_str = msg.date.strftime("%Y-%m-%d %H:%M")
             is_me = (msg.sender_id == me.id)
 
+            # Аватарка один раз при смене отправителя
             if msg.sender_id != last_sender_id:
                 avatar_path = None
                 if msg.sender and msg.sender.photo:
@@ -494,31 +498,41 @@ class TelegramLoginApp:
                     run = p_avatar.add_run()
                     run.add_picture(avatar_path, width=Inches(0.35))
                     p_avatar.alignment = WD_ALIGN_PARAGRAPH.RIGHT if is_me else WD_ALIGN_PARAGRAPH.LEFT
+                    p_avatar.paragraph_format.space_before = Pt(0)
+                    p_avatar.paragraph_format.space_after = Pt(0)
 
                 last_sender_id = msg.sender_id
 
+            # Основной параграф сообщения
             p = doc.add_paragraph()
+            p.alignment = WD_ALIGN_PARAGRAPH.RIGHT if is_me else WD_ALIGN_PARAGRAPH.LEFT
+            p.paragraph_format.space_before = Pt(0)
+            p.paragraph_format.space_after = Pt(0)
 
-            sender_run = p.add_run(sender + "\n")
+            # Sender
+            sender_run = p.add_run(sender)
             sender_run.bold = True
             sender_run.font.name = "Segoe UI Emoji"
             sender_run.font.size = Pt(11)
             sender_run.font.color.rgb = RGBColor(0, 102, 204) if is_me else RGBColor(0, 0, 0)
+            p.add_run().add_break()  # перенос строки
 
-            time_run = p.add_run(time_str + "\n")
+            # Time
+            time_run = p.add_run(time_str)
             time_run.italic = True
             time_run.font.name = "Segoe UI Emoji"
             time_run.font.size = Pt(8)
             time_run.font.color.rgb = RGBColor(128, 128, 128)
 
+            # Перенос перед текстом
             if text.strip():
+                p.add_run().add_break()
                 text_run = p.add_run(text)
                 text_run.font.name = "Segoe UI Emoji"
                 text_run.font.size = Pt(11)
                 text_run.font.color.rgb = RGBColor(0, 0, 0)
 
-            p.alignment = WD_ALIGN_PARAGRAPH.RIGHT if is_me else WD_ALIGN_PARAGRAPH.LEFT
-
+            # Медиа
             media_path_to_insert = None
             media_type_text = None
 
@@ -536,7 +550,11 @@ class TelegramLoginApp:
                     if downloaded_path and os.path.exists(downloaded_path):
                         ext = os.path.splitext(downloaded_path)[1].lower()
 
-                        if ext in ['.jpg', '.jpeg', '.png', '.gif', '.bmp']:
+                        if getattr(msg, "media", None) == MessageMediaType.STICKER:
+                            media_type_text = "[Sticker]"
+                            os.remove(downloaded_path)
+
+                        elif ext in ['.jpg', '.jpeg', '.png', '.gif', '.bmp']:
                             media_path_to_insert = downloaded_path
 
                         elif ext == '.webp':
@@ -548,18 +566,18 @@ class TelegramLoginApp:
                                 os.remove(downloaded_path)
                             except Exception as e:
                                 print(f"⚠️ WEBP conversion error {downloaded_path}: {e}")
-                                media_type_text = f"🖼️ [File]"
+                                media_type_text = f"[File]"
 
                         elif ext in ['.webm', '.mp4', '.mov']:
-                            media_type_text = f"🎬 [Video]"
+                            media_type_text = "[Video]"
                             os.remove(downloaded_path)
 
                         elif ext in ['.oga', '.mp3', '.flac']:
-                            media_type_text = f"🎤 [Voice Message/Audio]"
+                            media_type_text = "[Voice Message/Audio]"
                             os.remove(downloaded_path)
 
                         else:
-                            media_type_text = f"📎 [File: {os.path.basename(downloaded_path)}]"
+                            media_type_text = f"[File]"
                             if os.path.exists(downloaded_path):
                                 os.remove(downloaded_path)
 
@@ -567,6 +585,10 @@ class TelegramLoginApp:
                     print(f"⚠️ Could not download or process media {msg.id}: {e}")
                     media_type_text = "❌ [Media Download Error]"
 
+            if isinstance(msg, MessageService):
+                media_type_text = "[Service message]"
+
+            # Вставка картинки
             if media_path_to_insert and os.path.exists(media_path_to_insert):
                 try:
                     img_paragraph = doc.add_paragraph()
@@ -577,29 +599,36 @@ class TelegramLoginApp:
 
                     img_run.add_picture(media_path_to_insert, width=width)
                     img_paragraph.alignment = WD_ALIGN_PARAGRAPH.RIGHT if is_me else WD_ALIGN_PARAGRAPH.LEFT
+                    img_paragraph.paragraph_format.space_before = Pt(0)
+                    img_paragraph.paragraph_format.space_after = Pt(0)
 
                 except Exception as e:
                     print(f"⚠️ Error inserting image {media_path_to_insert} into DOCX: {e}")
-
                 finally:
                     os.remove(media_path_to_insert)
 
+            # Вставка текста медиа ([Video], [Audio], [Sticker])
             elif media_type_text:
-                media_p = doc.add_paragraph()
-                media_run = media_p.add_run(media_type_text)
+                media_p = doc.add_paragraph(media_type_text)
+                media_p.alignment = WD_ALIGN_PARAGRAPH.RIGHT if is_me else WD_ALIGN_PARAGRAPH.LEFT
+                media_p.paragraph_format.space_before = Pt(0)
+                media_p.paragraph_format.space_after = Pt(0)
+
+                media_run = media_p.runs[0]
                 media_run.font.italic = True
                 media_run.font.size = Pt(10)
                 media_run.font.color.rgb = RGBColor(160, 160, 160)
-                media_p.alignment = WD_ALIGN_PARAGRAPH.RIGHT if is_me else WD_ALIGN_PARAGRAPH.LEFT
 
+        # Сохраняем файл
         os.makedirs("exports/docx", exist_ok=True)
         file_path = f"exports/docx/chat_{dialog.id}.docx"
         doc.save(file_path)
         print(f"✅ Exported to Word: {file_path}")
 
+        # Чистим временные файлы
         try:
             for f in os.listdir(temp_dir):
                 os.remove(os.path.join(temp_dir, f))
             os.rmdir(temp_dir)
-        except Exception as e:
+        except Exception:
             pass
