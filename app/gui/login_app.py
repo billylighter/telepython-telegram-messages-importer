@@ -444,15 +444,19 @@ class TelegramLoginApp:
             count_entry.insert(0, "50")
             count_entry.pack(side="left", padx=5)
 
-
-
             export_word_btn = tk.Button(
                 self.export_controls,
                 text="📄 Export to Word",
-                command=lambda: export_chat_to_docx(self.selected_dialog, asyncio.run_coroutine_threadsafe(
-                    self.client_manager.client.get_messages(self.selected_dialog, limit=int(count_entry.get())),
-                    self.loop
-                ).result())
+                command=lambda: self.export_chat_to_docx(
+                    self.selected_dialog,
+                    asyncio.run_coroutine_threadsafe(
+                        self.client_manager.client.get_messages(
+                            self.selected_dialog,
+                            limit=int(count_entry.get())
+                        ),
+                        self.loop
+                    ).result()
+                )
             )
             export_word_btn.pack(side="left", padx=10)
 
@@ -477,57 +481,95 @@ class TelegramLoginApp:
             import os
             import asyncio
 
-            def export_chat_to_docx(dialog, messages):
-                doc = Document()
-                doc.add_heading(f"💬 Chat with {dialog.name}", level=1)
+    def export_chat_to_docx(self, dialog, messages):
+        from docx import Document
+        from docx.shared import Pt, Inches, RGBColor
+        from docx.enum.text import WD_ALIGN_PARAGRAPH
+        import asyncio, os
 
-                # Получаем текущего пользователя (чтобы понимать, какие сообщения — свои)
-                me = asyncio.run_coroutine_threadsafe(
-                    self.client_manager.client.get_me(), self.loop
-                ).result()
+        doc = Document()
+        # doc.add_heading(f"💬 Chat with {dialog.name}", level=1)
 
-                for msg in reversed(messages):
-                    sender = getattr(msg.sender, "first_name", "Unknown")
-                    text = msg.message or ""
-                    time_str = msg.date.strftime("%Y-%m-%d %H:%M")
-                    is_me = (msg.sender_id == me.id)
+        # Получаем текущего пользователя
+        me = asyncio.run_coroutine_threadsafe(
+            self.client_manager.client.get_me(), self.loop
+        ).result()
 
-                    # Основной контейнер параграфа
-                    p = doc.add_paragraph()
+        temp_dir = "exports/temp"
+        os.makedirs(temp_dir, exist_ok=True)
 
-                    # ✅ Имя отправителя (жирным)
-                    sender_run = p.add_run(sender)
-                    sender_run.bold = True
-                    sender_run.font.size = Pt(11)
-                    sender_run.font.color.rgb = RGBColor(0, 102, 204) if is_me else RGBColor(0, 0, 0)
+        last_sender_id = None  # чтобы не повторять фото
 
-                    # ✅ Время под именем (курсив, тонкое начертание)
-                    p.add_run("\n")  # переход на новую строку
-                    time_run = p.add_run(time_str)
-                    time_run.italic = True
-                    time_run.font.size = Pt(8)
-                    time_run.font.color.rgb = RGBColor(128, 128, 128)
+        for msg in reversed(messages):
+            sender = getattr(msg.sender, "first_name", "Unknown")
+            text = msg.message or ""
+            time_str = msg.date.strftime("%Y-%m-%d %H:%M")
+            is_me = (msg.sender_id == me.id)
 
-                    # ✅ Текст сообщения
-                    p.add_run("\n")
-                    text_run = p.add_run(text)
-                    text_run.font.size = Pt(11)
-                    text_run.font.color.rgb = RGBColor(0, 0, 0)
+            # === Если новый отправитель — добавляем аватар ===
+            if msg.sender_id != last_sender_id:
+                avatar_path = None
+                if msg.sender and msg.sender.photo:
+                    try:
+                        avatar_path = os.path.join(temp_dir, f"{msg.sender_id}.jpg")
+                        if not os.path.exists(avatar_path):
+                            asyncio.run_coroutine_threadsafe(
+                                self.client_manager.client.download_profile_photo(
+                                    msg.sender_id, file=avatar_path
+                                ),
+                                self.loop,
+                            ).result()
+                    except Exception as e:
+                        print(f"⚠️ Не удалось загрузить фото {sender}: {e}")
 
-                    # ✅ Выровнять по левой/правой стороне
-                    if is_me:
-                        p.alignment = WD_ALIGN_PARAGRAPH.RIGHT  # свои сообщения — справа
-                    else:
-                        p.alignment = WD_ALIGN_PARAGRAPH.LEFT  # чужие — слева
+                # Добавляем аватар в документ
+                if avatar_path and os.path.exists(avatar_path):
+                    p_avatar = doc.add_paragraph()
+                    run = p_avatar.add_run()
+                    run.add_picture(avatar_path, width=Inches(0.35))
+                    p_avatar.alignment = WD_ALIGN_PARAGRAPH.RIGHT if is_me else WD_ALIGN_PARAGRAPH.LEFT
 
-                    # Добавляем отступ между сообщениями
-                    doc.add_paragraph("")
+                last_sender_id = msg.sender_id
 
-                # Сохраняем DOCX
-                os.makedirs("exports/docx", exist_ok=True)
-                file_path = f"exports/docx/chat_{dialog.id}.docx"
-                doc.save(file_path)
-                print(f"✅ Экспортировано в Word: {file_path}")
+            # === Само сообщение ===
+            p = doc.add_paragraph()
+
+            # Имя
+            sender_run = p.add_run(sender + "\n")
+            sender_run.bold = True
+            sender_run.font.size = Pt(11)
+            sender_run.font.color.rgb = RGBColor(0, 102, 204) if is_me else RGBColor(0, 0, 0)
+
+            # Время
+            time_run = p.add_run(time_str + "\n")
+            time_run.italic = True
+            time_run.font.size = Pt(8)
+            time_run.font.color.rgb = RGBColor(128, 128, 128)
+
+            # Текст сообщения
+            text_run = p.add_run(text)
+            text_run.font.size = Pt(11)
+            text_run.font.color.rgb = RGBColor(0, 0, 0)
+
+            # Выравнивание
+            p.alignment = WD_ALIGN_PARAGRAPH.RIGHT if is_me else WD_ALIGN_PARAGRAPH.LEFT
+
+            # Отступ между сообщениями
+            # doc.add_paragraph("")
+
+        # === Сохраняем результат ===
+        os.makedirs("exports/docx", exist_ok=True)
+        file_path = f"exports/docx/chat_{dialog.id}.docx"
+        doc.save(file_path)
+        print(f"✅ Экспортировано в Word: {file_path}")
+
+        # Чистим временные фото
+        try:
+            for f in os.listdir(temp_dir):
+                os.remove(os.path.join(temp_dir, f))
+        except Exception:
+            pass
+
 
 
 
