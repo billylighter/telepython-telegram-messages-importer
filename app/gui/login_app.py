@@ -444,12 +444,7 @@ class TelegramLoginApp:
             count_entry.insert(0, "50")
             count_entry.pack(side="left", padx=5)
 
-            export_btn = tk.Button(
-                self.export_controls,
-                text="📦 Export Chat",
-                command=lambda: export_chat(int(count_entry.get()))
-            )
-            export_btn.pack(side="left", padx=10)
+
 
             export_word_btn = tk.Button(
                 self.export_controls,
@@ -475,103 +470,6 @@ class TelegramLoginApp:
 
                 # Показываем панель экспорта
                 self.export_controls.pack(fill="x", padx=10, pady=(0, 10))
-
-            def export_chat(limit):
-                dialog = getattr(self, "selected_dialog", None)
-                if not dialog:
-                    print("⚠️ Диалог не выбран")
-                    return
-
-                async def _fetch_and_export():
-                    msgs = await self.client_manager.client.get_messages(dialog, limit=limit)
-                    export_chat_to_image(dialog, msgs)
-
-                asyncio.run_coroutine_threadsafe(_fetch_and_export(), self.loop)
-
-            def export_chat_to_image(dialog, messages):
-                import os
-                from PIL import Image, ImageDraw, ImageFont
-
-                width = 900
-                padding = 20
-                y = padding
-                bg_color = "white"
-                text_color = "black"
-                time_color = "#666"
-
-                possible_fonts = [
-                    "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
-                    "C:/Windows/Fonts/arial.ttf",
-                    "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
-                    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-                ]
-                font_path = next((f for f in possible_fonts if os.path.exists(f)), None)
-                if font_path:
-                    font = ImageFont.truetype(font_path, 16)
-                    font_small = ImageFont.truetype(font_path, 13)
-                else:
-                    font = ImageFont.load_default()
-                    font_small = ImageFont.load_default()
-
-                me = asyncio.run_coroutine_threadsafe(
-                    self.client_manager.client.get_me(), self.loop
-                ).result()
-
-                img = Image.new("RGB", (width, 6000), color=bg_color)
-                draw = ImageDraw.Draw(img)
-
-                draw.text((padding, y), f"💬 {dialog.name}", fill="black", font=font)
-                y += 40
-
-                for msg in reversed(messages):
-                    sender = getattr(msg.sender, "first_name", "Unknown")
-                    text = msg.message or ""
-                    time_str = msg.date.strftime("%Y-%m-%d %H:%M")
-
-                    # Проверяем, кто отправитель
-                    is_me = (msg.sender_id == me.id)
-
-                    max_width = width - 2 * padding - 120
-                    lines = []
-                    words = text.split()
-                    current = ""
-                    for word in words:
-                        if draw.textlength(current + " " + word, font=font) < max_width:
-                            current += " " + word
-                        else:
-                            lines.append(current.strip())
-                            current = word
-                    if current:
-                        lines.append(current.strip())
-
-                    # Определяем позицию по выравниванию
-                    if is_me:
-                        x_align = width - padding - max(draw.textlength(line, font=font) for line in lines) - 20
-                        bubble_color = "#d4f1ff"  # голубой
-                    else:
-                        x_align = padding
-                        bubble_color = "#f1f1f1"  # серый
-
-                    # Рисуем "пузырь" и текст
-                    bubble_height = sum(
-                        draw.textbbox((0, 0), line, font=font)[3] - draw.textbbox((0, 0), line, font=font)[1] + 5 for
-                        line in lines) + 30
-                    draw.rectangle(
-                        [x_align - 10, y - 5, width - padding if is_me else width - padding - 600, y + bubble_height],
-                        fill=bubble_color, outline="#ddd")
-
-                    for line in lines:
-                        draw.text((x_align, y), line, fill=text_color, font=font)
-                        y += 22
-
-                    draw.text((x_align, y), f"{sender} [{time_str}]", fill=time_color, font=font_small)
-                    y += 30
-
-                img = img.crop((0, 0, width, y + padding))
-                os.makedirs("exports", exist_ok=True)
-                file_path = f"exports/chat_{dialog.id}.png"
-                img.save(file_path, "PNG")
-                print(f"✅ Экспортировано изображение: {file_path}")
 
             from docx import Document
             from docx.shared import Pt, RGBColor
