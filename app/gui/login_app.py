@@ -271,6 +271,28 @@ class TelegramLoginApp:
             messagebox.showinfo("Message Sent", "Message sent to Saved Messages.")
 
     def show_success(self):
+        import os
+        from PIL import Image, ImageTk, ImageDraw, ImageFont
+
+        # -------------------- Плейсхолдер для отсутствующих аватаров --------------------
+        def generate_placeholder_avatar(letter):
+            img = Image.new("RGB", (40, 40), color="#cccccc")
+            draw = ImageDraw.Draw(img)
+            try:
+                font = ImageFont.truetype("arial.ttf", 20)
+            except:
+                font = ImageFont.load_default()
+
+            # Новый способ вычислить размеры текста
+            bbox = draw.textbbox((0, 0), letter, font=font)
+            w = bbox[2] - bbox[0]
+            h = bbox[3] - bbox[1]
+
+            # Центрируем текст
+            draw.text(((40 - w) / 2, (40 - h) / 2), letter, fill="white", font=font)
+            return img
+
+        # -------------------- Основной код --------------------
         # Увеличиваем окно
         self.root.geometry("800x500")
 
@@ -312,7 +334,7 @@ class TelegramLoginApp:
                                                                                                 padx=10)
 
         # -------------------- Правая панель (список диалогов) --------------------
-
+        import asyncio
 
         # Получаем диалоги (блокирующе, но безопасно)
         future = asyncio.run_coroutine_threadsafe(
@@ -370,19 +392,42 @@ class TelegramLoginApp:
         # Выводим диалоги
         for d in dialogs:
             print(d)
+
+            # Генерируем плейсхолдер-аватар с первой буквой названия
+            first_letter = (d.name[0].upper() if d.name else "?")
+            avatar_img = generate_placeholder_avatar(first_letter)
+            avatar_photo = ImageTk.PhotoImage(avatar_img)
+
+            # Контейнер для одной строки диалога
+            dialog_frame = tk.Frame(scrollable_frame, bg=DIALOG_BG, padx=5, pady=3)
+            dialog_frame.pack(fill="x", padx=10, pady=2)
+
+            # Аватар
+            avatar_label = tk.Label(dialog_frame, image=avatar_photo, bg=DIALOG_BG)
+            avatar_label.image = avatar_photo  # нужно, чтобы не сборщик мусора не удалил
+            avatar_label.pack(side="left", padx=(0, 8))
+
+            # Название диалога
             lbl = tk.Label(
-                scrollable_frame,
-                text=f"💬 {d.name}",
+                dialog_frame,
+                text=f"{d.name}",
                 bg=DIALOG_BG,
                 anchor="w",
                 font=("Arial", 11),
-                cursor="hand2",
-                padx=5,
-                pady=3
+                cursor="hand2"
             )
-            lbl.pack(fill="x", padx=10, pady=2)
-            lbl.bind("<Button-1>", lambda e, dialog_id=d.id, l=lbl: select_dialog(dialog_id, l))
-            self.dialog_labels.append(lbl)
+            lbl.pack(side="left", fill="x", expand=True)
+
+            # Клик по строке диалога
+            def on_click(event, dialog_id=d.id, l=dialog_frame):
+                select_dialog(dialog_id, l)
+
+            dialog_frame.bind("<Button-1>", on_click)
+            lbl.bind("<Button-1>", on_click)
+            avatar_label.bind("<Button-1>", on_click)
+
+            self.dialog_labels.append(dialog_frame)
+
 
 
 
