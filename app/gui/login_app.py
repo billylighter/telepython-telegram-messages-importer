@@ -7,6 +7,9 @@ from tkinter import messagebox, simpledialog
 from PIL import Image, ImageTk, ImageDraw, ImageFont
 from telethon.errors import SessionPasswordNeededError
 
+from docx import Document
+from docx.shared import Pt, RGBColor
+
 from app.utils.constants import AVATAR_SIZE, SESSIONS_DIR, IMAGES_DIR
 from app.utils.file_utils import load_meta, save_meta
 from app.utils.image_utils import make_rounded_avatar, generate_letter_avatar
@@ -427,6 +430,207 @@ class TelegramLoginApp:
             avatar_label.bind("<Button-1>", on_click)
 
             self.dialog_labels.append(dialog_frame)
+
+            # -------------------- Панель для экспорта (изначально скрыта) --------------------
+            # -------------------- Панель для экспорта (одна, общая, изначально скрыта) --------------------
+            self.export_controls = tk.Frame(dialogs_frame, bg="#eef5ff", relief="ridge", bd=2)
+            self.export_controls.pack(fill="x", padx=10, pady=(0, 10))
+            self.export_controls.pack_forget()  # скрываем до выбора диалога
+
+            export_label = tk.Label(self.export_controls, text="📜", bg="#eef5ff")
+            export_label.pack(side="left", padx=5)
+
+            count_entry = tk.Entry(self.export_controls, width=6)
+            count_entry.insert(0, "50")
+            count_entry.pack(side="left", padx=5)
+
+            export_btn = tk.Button(
+                self.export_controls,
+                text="📦 Export Chat",
+                command=lambda: export_chat(int(count_entry.get()))
+            )
+            export_btn.pack(side="left", padx=10)
+
+            export_word_btn = tk.Button(
+                self.export_controls,
+                text="📄 Export to Word",
+                command=lambda: export_chat_to_docx(self.selected_dialog, asyncio.run_coroutine_threadsafe(
+                    self.client_manager.client.get_messages(self.selected_dialog, limit=int(count_entry.get())),
+                    self.loop
+                ).result())
+            )
+            export_word_btn.pack(side="left", padx=10)
+
+            # -------------------- Функции --------------------
+
+            def select_dialog(dialog_id, frame):
+                # Сброс выделений
+                for lbl in self.dialog_labels:
+                    lbl.config(bg=DIALOG_BG)
+                frame.config(bg=DIALOG_BG_SELECTED)
+
+                self.selected_dialog_id = dialog_id
+                self.selected_dialog = next((d for d in dialogs if d.id == dialog_id), None)
+                print("Выбран диалог ID:", dialog_id)
+
+                # Показываем панель экспорта
+                self.export_controls.pack(fill="x", padx=10, pady=(0, 10))
+
+            def export_chat(limit):
+                dialog = getattr(self, "selected_dialog", None)
+                if not dialog:
+                    print("⚠️ Диалог не выбран")
+                    return
+
+                async def _fetch_and_export():
+                    msgs = await self.client_manager.client.get_messages(dialog, limit=limit)
+                    export_chat_to_image(dialog, msgs)
+
+                asyncio.run_coroutine_threadsafe(_fetch_and_export(), self.loop)
+
+            def export_chat_to_image(dialog, messages):
+                import os
+                from PIL import Image, ImageDraw, ImageFont
+
+                width = 900
+                padding = 20
+                y = padding
+                bg_color = "white"
+                text_color = "black"
+                time_color = "#666"
+
+                possible_fonts = [
+                    "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
+                    "C:/Windows/Fonts/arial.ttf",
+                    "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+                    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+                ]
+                font_path = next((f for f in possible_fonts if os.path.exists(f)), None)
+                if font_path:
+                    font = ImageFont.truetype(font_path, 16)
+                    font_small = ImageFont.truetype(font_path, 13)
+                else:
+                    font = ImageFont.load_default()
+                    font_small = ImageFont.load_default()
+
+                me = asyncio.run_coroutine_threadsafe(
+                    self.client_manager.client.get_me(), self.loop
+                ).result()
+
+                img = Image.new("RGB", (width, 6000), color=bg_color)
+                draw = ImageDraw.Draw(img)
+
+                draw.text((padding, y), f"💬 {dialog.name}", fill="black", font=font)
+                y += 40
+
+                for msg in reversed(messages):
+                    sender = getattr(msg.sender, "first_name", "Unknown")
+                    text = msg.message or ""
+                    time_str = msg.date.strftime("%Y-%m-%d %H:%M")
+
+                    # Проверяем, кто отправитель
+                    is_me = (msg.sender_id == me.id)
+
+                    max_width = width - 2 * padding - 120
+                    lines = []
+                    words = text.split()
+                    current = ""
+                    for word in words:
+                        if draw.textlength(current + " " + word, font=font) < max_width:
+                            current += " " + word
+                        else:
+                            lines.append(current.strip())
+                            current = word
+                    if current:
+                        lines.append(current.strip())
+
+                    # Определяем позицию по выравниванию
+                    if is_me:
+                        x_align = width - padding - max(draw.textlength(line, font=font) for line in lines) - 20
+                        bubble_color = "#d4f1ff"  # голубой
+                    else:
+                        x_align = padding
+                        bubble_color = "#f1f1f1"  # серый
+
+                    # Рисуем "пузырь" и текст
+                    bubble_height = sum(
+                        draw.textbbox((0, 0), line, font=font)[3] - draw.textbbox((0, 0), line, font=font)[1] + 5 for
+                        line in lines) + 30
+                    draw.rectangle(
+                        [x_align - 10, y - 5, width - padding if is_me else width - padding - 600, y + bubble_height],
+                        fill=bubble_color, outline="#ddd")
+
+                    for line in lines:
+                        draw.text((x_align, y), line, fill=text_color, font=font)
+                        y += 22
+
+                    draw.text((x_align, y), f"{sender} [{time_str}]", fill=time_color, font=font_small)
+                    y += 30
+
+                img = img.crop((0, 0, width, y + padding))
+                os.makedirs("exports", exist_ok=True)
+                file_path = f"exports/chat_{dialog.id}.png"
+                img.save(file_path, "PNG")
+                print(f"✅ Экспортировано изображение: {file_path}")
+
+            from docx import Document
+            from docx.shared import Pt, RGBColor
+            from docx.enum.text import WD_ALIGN_PARAGRAPH
+            import os
+            import asyncio
+
+            def export_chat_to_docx(dialog, messages):
+                doc = Document()
+                doc.add_heading(f"💬 Chat with {dialog.name}", level=1)
+
+                # Получаем текущего пользователя (чтобы понимать, какие сообщения — свои)
+                me = asyncio.run_coroutine_threadsafe(
+                    self.client_manager.client.get_me(), self.loop
+                ).result()
+
+                for msg in reversed(messages):
+                    sender = getattr(msg.sender, "first_name", "Unknown")
+                    text = msg.message or ""
+                    time_str = msg.date.strftime("%Y-%m-%d %H:%M")
+                    is_me = (msg.sender_id == me.id)
+
+                    # Основной контейнер параграфа
+                    p = doc.add_paragraph()
+
+                    # ✅ Имя отправителя (жирным)
+                    sender_run = p.add_run(sender)
+                    sender_run.bold = True
+                    sender_run.font.size = Pt(11)
+                    sender_run.font.color.rgb = RGBColor(0, 102, 204) if is_me else RGBColor(0, 0, 0)
+
+                    # ✅ Время под именем (курсив, тонкое начертание)
+                    p.add_run("\n")  # переход на новую строку
+                    time_run = p.add_run(time_str)
+                    time_run.italic = True
+                    time_run.font.size = Pt(8)
+                    time_run.font.color.rgb = RGBColor(128, 128, 128)
+
+                    # ✅ Текст сообщения
+                    p.add_run("\n")
+                    text_run = p.add_run(text)
+                    text_run.font.size = Pt(11)
+                    text_run.font.color.rgb = RGBColor(0, 0, 0)
+
+                    # ✅ Выровнять по левой/правой стороне
+                    if is_me:
+                        p.alignment = WD_ALIGN_PARAGRAPH.RIGHT  # свои сообщения — справа
+                    else:
+                        p.alignment = WD_ALIGN_PARAGRAPH.LEFT  # чужие — слева
+
+                    # Добавляем отступ между сообщениями
+                    doc.add_paragraph("")
+
+                # Сохраняем DOCX
+                os.makedirs("exports/docx", exist_ok=True)
+                file_path = f"exports/docx/chat_{dialog.id}.docx"
+                doc.save(file_path)
+                print(f"✅ Экспортировано в Word: {file_path}")
+
 
 
 
