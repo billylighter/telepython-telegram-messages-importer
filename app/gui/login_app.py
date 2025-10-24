@@ -353,16 +353,36 @@ class TelegramLoginApp:
 
         # Привязываем колесо мыши
         canvas.bind_all("<MouseWheel>", _on_mousewheel)
+        self.selected_dialog_id = None  # ID выбранного диалога
+        self.dialog_labels = []  # Список Label для управления цветом
+        DIALOG_BG = "white"
+        DIALOG_BG_SELECTED = "#cce5ff"  # цвет выбранного диалога
+
+        def select_dialog(dialog_id, label):
+            # Сбрасываем фон всех
+            for lbl in self.dialog_labels:
+                lbl.config(bg=DIALOG_BG)
+            # Выделяем выбранный
+            label.config(bg=DIALOG_BG_SELECTED)
+            self.selected_dialog_id = dialog_id
+            print("Выбран диалог ID:", dialog_id)
 
         # Выводим диалоги
         for d in dialogs:
-            tk.Label(
+            print(d)
+            lbl = tk.Label(
                 scrollable_frame,
                 text=f"💬 {d.name}",
-                bg="white",
+                bg=DIALOG_BG,
                 anchor="w",
-                font=("Arial", 11)
-            ).pack(fill="x", padx=10, pady=3)
+                font=("Arial", 11),
+                cursor="hand2",
+                padx=5,
+                pady=3
+            )
+            lbl.pack(fill="x", padx=10, pady=2)
+            lbl.bind("<Button-1>", lambda e, dialog_id=d.id, l=lbl: select_dialog(dialog_id, l))
+            self.dialog_labels.append(lbl)
 
 
 
