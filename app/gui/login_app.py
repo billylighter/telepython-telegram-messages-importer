@@ -522,7 +522,7 @@ class TelegramLoginApp:
                     except Exception as e:
                         print(f"⚠️ Не удалось загрузить фото {sender}: {e}")
 
-                # Добавляем аватар в документ
+                # Добавляем аватар
                 if avatar_path and os.path.exists(avatar_path):
                     p_avatar = doc.add_paragraph()
                     run = p_avatar.add_run()
@@ -531,7 +531,7 @@ class TelegramLoginApp:
 
                 last_sender_id = msg.sender_id
 
-            # === Само сообщение ===
+            # === Основной блок сообщения ===
             p = doc.add_paragraph()
 
             # Имя
@@ -546,16 +546,33 @@ class TelegramLoginApp:
             time_run.font.size = Pt(8)
             time_run.font.color.rgb = RGBColor(128, 128, 128)
 
-            # Текст сообщения
-            text_run = p.add_run(text)
-            text_run.font.size = Pt(11)
-            text_run.font.color.rgb = RGBColor(0, 0, 0)
+            # Текст (если есть)
+            if text.strip():
+                text_run = p.add_run(text)
+                text_run.font.size = Pt(11)
+                text_run.font.color.rgb = RGBColor(0, 0, 0)
 
-            # Выравнивание
             p.alignment = WD_ALIGN_PARAGRAPH.RIGHT if is_me else WD_ALIGN_PARAGRAPH.LEFT
 
-            # Отступ между сообщениями
-            # doc.add_paragraph("")
+            # === Если сообщение содержит фото ===
+            if getattr(msg, "photo", None) or getattr(msg, "media", None):
+                try:
+                    photo_path = os.path.join(temp_dir, f"photo_{msg.id}.jpg")
+                    asyncio.run_coroutine_threadsafe(
+                        self.client_manager.client.download_media(
+                            msg, file=photo_path
+                        ),
+                        self.loop,
+                    ).result()
+
+                    if os.path.exists(photo_path):
+                        img_paragraph = doc.add_paragraph()
+                        img_run = img_paragraph.add_run()
+                        img_run.add_picture(photo_path, width=Inches(2.5))
+                        img_paragraph.alignment = WD_ALIGN_PARAGRAPH.RIGHT if is_me else WD_ALIGN_PARAGRAPH.LEFT
+
+                except Exception as e:
+                    print(f"⚠️ Не удалось скачать фото из сообщения {msg.id}: {e}")
 
         # === Сохраняем результат ===
         os.makedirs("exports/docx", exist_ok=True)
@@ -563,12 +580,13 @@ class TelegramLoginApp:
         doc.save(file_path)
         print(f"✅ Экспортировано в Word: {file_path}")
 
-        # Чистим временные фото
+        # Чистим временные файлы
         try:
             for f in os.listdir(temp_dir):
                 os.remove(os.path.join(temp_dir, f))
         except Exception:
             pass
+
 
 
 
